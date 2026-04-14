@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Jarvis YouTube Assistant</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    /* Hacker-style terminal look */
+    html,body { height:100%; margin:0; }
+    body{
+      background:#000;
+      color:#0f0;
+      font-family: "Courier New", monospace;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      flex-direction:column;
+      text-align:center;
+      padding:24px;
+    }
+    h1{ margin:0 0 14px 0; font-size:28px; }
+    #status { margin-top:14px; font-size:16px; max-width:900px; word-wrap:break-word; }
+    button {
+      margin-top:12px;
+      padding:10px 18px;
+      background:#0f0; color:#000;
+      border:0; border-radius:8px; cursor:pointer;
+      font-weight:bold;
+    }
+    button:hover{ background:#0b0; }
+    #logbox{
+      margin-top:18px;
+      width:90%;
+      max-width:900px;
+      background:rgba(0,0,0,0.6);
+      border:1px solid #083;
+      padding:10px;
+      text-align:left;
+      font-size:13px;
+      line-height:1.45;
+      height:160px;
+      overflow:auto;
+    }
+    .muted { color:#6f6; font-size:12px; margin-top:8px; }
+    a.small { color:#9f9; font-size:12px; text-decoration:none; }
+  </style>
+</head>
+<body>
+  <h1>🎤 Jarvis YouTube Assistant</h1>
+  <button id="startBtn">Start Listening</button>
+  <div id="status">Click Start and say e.g. "Jarvis play Pasoori" or "Jarvis open Mustafa Hanif vlog".</div>
+
+  <div id="logbox"></div>
+  <div class="muted">Tip: Run via <strong>Live Server</strong> (VS Code) or visit <code>http://localhost:8000/jarvis.html</code>.</div>
+  <div style="margin-top:8px;"><a class="small" href="https://console.cloud.google.com/apis/credentials" target="_blank">Open Google Cloud Credentials</a></div>
+
+<script>
+/* ---------- INSERTED API KEY (you provided) ---------- */
+const API_KEY = "AIzaSyBqTIDhwdCZzybHmYPYCgZ1B3lNKoc26uM";
+/* ---------------------------------------------------- */
+
+const logbox = document.getElementById('logbox');
+function trace(...args){
+  const txt = args.map(x => (typeof x === 'object' ? JSON.stringify(x) : String(x))).join(' ');
+  console.log(...args);
+  const p = document.createElement('div'); p.textContent = txt;
+  logbox.appendChild(p); logbox.scrollTop = logbox.scrollHeight;
+}
+
+/* Speech setup */
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if(!SpeechRecognition){
+  document.getElementById('status').innerText = "SpeechRecognition not supported in this browser. Use Chrome or Edge.";
+  trace("Browser does not support Web Speech API (SpeechRecognition).");
+} else {
+  const recognition = new SpeechRecognition();
+  recognition.continuous = false; // one-shot per click
+  recognition.interimResults = false;
+  recognition.lang = "en-US"; // change to "ur-PK" if you speak Urdu often
+
+  const startBtn = document.getElementById('startBtn');
+  const status = document.getElementById('status');
+
+  startBtn.addEventListener('click', () => {
+    try {
+      recognition.start();
+      status.innerText = "🎧 Listening... speak now.";
+      trace("Recognition started.");
+    } catch(e){
+      trace("Recognition start error:", e);
+    }
+  });
+
+  recognition.onresult = async (event) => {
+    const transcript = event.results[0][0].transcript.trim();
+    status.innerText = "You said: " + transcript;
+    trace("Transcript:", transcript);
+
+    // Basic responses
+    if(transcript.toLowerCase().includes("jarvis")){
+      speak("Yes boss, I am listening.");
+    }
+
+    // detect play/open commands (you can say "Jarvis play Balenci" or "Jarvis open Instagram")
+    const lc = transcript.toLowerCase();
+    if(lc.includes("play") || lc.includes("open") || lc.includes("chalao") || lc.includes("lagao") || lc.includes("khol")){
+      let query = transcript.replace(/(jarvis|play|open|chalao|lagao|khol|please|bhai)/gi, "").trim();
+      if(!query){
+        speak("Tell me what to play or open.");
+        trace("Empty query after cleanup.");
+        return;
+      }
+
+      /* ---- WEBSITE SHORTCUTS ---- */
+      if(query.toLowerCase().includes("instagram")){
+        speak("Opening Instagram.");
+        window.location.href = "https://www.instagram.com";
+        return;
+      }
+      if(query.toLowerCase().includes("whatsapp")){
+        speak("Opening WhatsApp.");
+        window.location.href = "https://web.whatsapp.com";
+        return;
+      }
+      if(query.toLowerCase().includes("spotify")){
+        speak("Opening Spotify.");
+        window.location.href = "https://open.spotify.com";
+        return;
+      }
+      if(query.toLowerCase().includes("chatgpt")){
+        speak("Opening ChatGPT.");
+        window.location.href = "https://chat.openai.com";
+        return;
+      }
+      if(query.toLowerCase().includes("google")){
+        speak("Opening Google.");
+        window.location.href = "https://www.google.com";
+        return;
+      }
+      /* --------------------------- */
+
+      speak("Searching YouTube for " + query);
+      trace("Searching YouTube for:", query);
+      await searchYouTube(query);
+    } else {
+      trace("Not a play/open command.");
+    }
+  };
+
+  recognition.onerror = (ev) => {
+    status.innerText = "Error: " + ev.error;
+    trace("Recognition error:", ev.error);
+  };
+
+  /* Speak helper */
+  function speak(txt){
+    try {
+      const u = new SpeechSynthesisUtterance(txt);
+      u.lang = "en-US";
+      window.speechSynthesis.speak(u);
+    } catch(e){ trace("TTS error:", e); }
+  }
+
+  /* Search YouTube using YouTube Data API v3 (first video) */
+  async function searchYouTube(q){
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=${encodeURIComponent(q)}&key=${API_KEY}`;
+    trace("Fetch URL:", url);
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      trace("YouTube API response:", data);
+
+      if(data.error){
+        trace("YouTube API error:", data.error);
+        speak("I could not search — API error. Check console for details.");
+        return;
+      }
+
+      if(data.items && data.items.length){
+        const vid = data.items[0].id.videoId;
+        const videoUrl = `https://www.youtube.com/watch?v=${vid}`;
+        trace("Opening video:", videoUrl);
+        window.location.href = videoUrl;
+      } else {
+        trace("No items returned from YouTube API.");
+        speak("I could not find anything.");
+        const fallback = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+        window.location.href = fallback;
+      }
+    } catch(err){
+      trace("Fetch error:", err);
+      speak("Network error while searching YouTube.");
+      const fallback = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+      window.location.href = fallback;
+    }
+  }
+}
+</script>
+</body>
+</html>
